@@ -9,7 +9,12 @@ function Symlink-File {
         } else {
             cmd /c mklink "$DestPath" "$SourcePath"
         }
-        echo "$DestPath has been symlinked"
+
+        if ($LASTEXITCODE -eq 0) {
+            echo "$DestPath has been symlinked"
+        } else {
+            Write-Error "$DestPath symlink failed, exit code: $LASTEXITCODE"
+        }
     }
 }
 
@@ -22,7 +27,12 @@ function Unsymlink-File {
         } else {
             cmd /c del "$DestPath"
         }
-        echo "$DestPath has been unsymlinked"
+
+        if ($LASTEXITCODE -eq 0) {
+            echo "$DestPath has been unsymlinked"
+        } else {
+            Write-Error "$DestPath unsymlink failed, exit code: $LASTEXITCODE"
+        }
     } else {
         Write-Warning "$DestPath doesn't exist"
     }
@@ -33,13 +43,19 @@ function Deploy-Manifest {
     
     echo "Deploying $ManifestFile..."
 
-    $Manifest = Import-Csv -Header ("file", "operation") -Delimiter ("|") -Path ".\$ManifestFile"
+    $Manifest = Get-Content -LiteralPath ".\$ManifestFile" |
+                Where-Object { $_ -notmatch '^\s*(#|$)' } |
+                ConvertFrom-Csv -Header file, operation, destination -Delimiter '|'
     $EmacsHome = $env:HOME
     foreach ($ManifestRow in $Manifest) {
         $DeployFile = $ManifestRow.file
         $DeployOp = $ManifestRow.operation
         $SourcePath = "$PSScriptRoot\$DeployFile"
         $DestPath = "$EmacsHome\$DeployFile"
+        if (-not [string]::IsNullOrWhiteSpace($ManifestRow.destination)) {
+            $Destination = $ManifestRow.destination.Trim()
+            $DestPath = "$EmacsHome\$Destination\$DeployFile"
+        }
         switch($DeployOp) {
             "symlink" {
                 Symlink-File $DestPath $SourcePath
@@ -61,13 +77,19 @@ function Undeploy-Manifest {
     
     echo "Undeploying $ManifestFile..."
 
-    $Manifest = Import-Csv -Header ("file", "operation") -Delimiter ("|") -Path ".\$ManifestFile"
+    $Manifest = Get-Content -LiteralPath ".\$ManifestFile" |
+                Where-Object { $_ -notmatch '^\s*(#|$)' } |
+                ConvertFrom-Csv -Header file, operation, destination -Delimiter '|'
     $EmacsHome = $env:HOME
     foreach ($ManifestRow in $Manifest) {
         $DeployFile = $ManifestRow.file
         $DeployOp = $ManifestRow.operation
         $SourcePath = "$PSScriptRoot\$DeployFile"
         $DestPath = "$EmacsHome\$DeployFile"
+        if (-not [string]::IsNullOrWhiteSpace($ManifestRow.destination)) {
+            $Destination = $ManifestRow.destination.Trim()
+            $DestPath = "$EmacsHome\$Destination\$DeployFile"
+        }
         switch($DeployOp) {
             "symlink" {
                 Unsymlink-File $DestPath $SourcePath
